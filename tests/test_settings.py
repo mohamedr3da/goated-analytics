@@ -20,6 +20,7 @@ def test_authorized_id_settings_accept_blank_json_and_comma_lists(
     expected: set[int],
 ) -> None:
     settings = Settings(
+        x_provider_mode="mock",
         authorized_discord_user_ids=raw,
         authorized_discord_role_ids=raw,
     )
@@ -30,13 +31,13 @@ def test_authorized_id_settings_accept_blank_json_and_comma_lists(
 
 def test_authorized_id_settings_reject_invalid_ids_with_clear_error() -> None:
     with pytest.raises(ValidationError) as exc_info:
-        Settings(authorized_discord_user_ids="123,not-a-number")
+        Settings(x_provider_mode="mock", authorized_discord_user_ids="123,not-a-number")
 
     assert "integer Discord IDs" in str(exc_info.value)
 
 
 def test_real_x_runtime_settings_have_safe_defaults() -> None:
-    settings = Settings()
+    settings = Settings(x_provider_mode="mock")
 
     assert settings.x_initial_backfill_days == 30
     assert settings.x_initial_backfill_max_posts == 200
@@ -45,3 +46,14 @@ def test_real_x_runtime_settings_have_safe_defaults() -> None:
     assert settings.x_max_concurrency == 2
     assert settings.snapshot_min_interval_minutes == 60
 
+
+def test_scraper_provider_mode_is_accepted_for_local_proof_of_concept() -> None:
+    settings = Settings(x_provider_mode="scraper")
+
+    assert settings.x_provider_mode == "scraper"
+
+
+def test_legacy_api_provider_mode_aliases_to_official_x_api_mode() -> None:
+    settings = Settings(x_provider_mode="api")
+
+    assert settings.x_provider_mode == "x_api"

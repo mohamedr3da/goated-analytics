@@ -24,6 +24,14 @@ from bot.tasks.collector import CollectionService
 from bot.tasks.scheduler import CollectorScheduler
 
 
+def _provider_mode_label(settings: Settings) -> str:
+    if settings.x_provider_mode == "scraper":
+        return "scraper (public, unauthenticated)"
+    if settings.x_provider_mode == "x_api":
+        return "x_api (official API)"
+    return "mock"
+
+
 def register_commands(
     *,
     bot: commands.Bot,
@@ -221,7 +229,7 @@ def register_commands(
             value="OK" if provider_ok else "Unavailable",
             inline=True,
         )
-        embed.add_field(name="Provider mode", value=settings.x_provider_mode, inline=True)
+        embed.add_field(name="Provider mode", value=_provider_mode_label(settings), inline=True)
         embed.add_field(name="Tracked accounts", value=str(tracked_count), inline=True)
         if scheduler.last_result is not None:
             embed.add_field(
@@ -237,6 +245,16 @@ def register_commands(
                 name="X rate limit",
                 value=(
                     f"{provider.last_rate_limit.remaining or 'unknown'} remaining"
+                ),
+                inline=True,
+            )
+        scraper_stats = getattr(provider, "last_scrape_stats", None)
+        if isinstance(scraper_stats, dict):
+            embed.add_field(
+                name="Scraper stats",
+                value=(
+                    f"{scraper_stats.get('posts_extracted', 0)} posts, "
+                    f"{scraper_stats.get('missing_metrics', 0)} missing metrics"
                 ),
                 inline=True,
             )

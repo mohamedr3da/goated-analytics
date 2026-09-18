@@ -44,7 +44,7 @@ class Settings(BaseSettings):
 
     discord_token: SecretStr | None = None
     database_url: str = "sqlite+aiosqlite:///./data/x_analytics.db"
-    x_provider_mode: Literal["mock", "x_api"] = "mock"
+    x_provider_mode: Literal["mock", "x_api", "scraper"] = "mock"
     x_bearer_token: SecretStr | None = None
     collection_interval_minutes: int = Field(default=60, ge=15, le=1440)
     x_recent_posts_limit: int = Field(default=20, ge=5, le=100)
@@ -63,3 +63,13 @@ class Settings(BaseSettings):
     @classmethod
     def parse_id_sets(cls, value: object) -> set[int]:
         return _parse_id_set(value)
+
+    @field_validator("x_provider_mode", mode="before")
+    @classmethod
+    def normalize_x_provider_mode(cls, value: object) -> object:
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized == "api":
+                return "x_api"
+            return normalized
+        return value

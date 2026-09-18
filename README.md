@@ -9,7 +9,8 @@ The important design choice is that the bot never fabricates unavailable history
 - `bot/discord_app`: Discord slash commands and embeds.
 - `bot/services`: business workflows such as tracking and summaries.
 - `bot/tasks`: scheduled collection.
-- `bot/providers`: `XAnalyticsProvider` abstraction, real X API provider, and mock provider.
+- `bot/providers`: `XAnalyticsProvider` abstraction, official X API provider, mock provider,
+  and experimental public scraper provider.
 - `bot/repositories`: async SQLAlchemy data access.
 - `bot/database`: models and session setup.
 - `bot/analytics`: snapshot delta calculations.
@@ -28,6 +29,7 @@ The Discord layer depends on services, services depend on repositories and the p
 - `/status`: check database, scheduler, and provider health.
 - Background collection of account snapshots, recent posts, and post metric snapshots.
 - Mock provider for local development without X API credentials.
+- Experimental public scraper mode for local proof-of-concept checks without X credentials.
 - Async SQLAlchemy models with SQLite locally and PostgreSQL-friendly schema choices.
 - Alembic initial migration scaffold.
 - TypeScript Cloudflare Worker production target in `worker/` using Discord HTTP Interactions,
@@ -77,6 +79,15 @@ X_PROVIDER_MODE=x_api
 X_BEARER_TOKEN=your_x_api_bearer_token
 ```
 
+For the experimental logged-out public scraper proof:
+
+```dotenv
+X_PROVIDER_MODE=scraper
+```
+
+That mode uses only public profile HTML, does not use X credentials, does not persist cookies, and
+is not enabled in production by this repository change.
+
 Additional local settings:
 
 ```dotenv
@@ -115,6 +126,12 @@ By default the app creates `data/x_analytics.db` and starts a collector loop eve
 ```
 
 Tests do not call live Discord or X APIs.
+
+For a one-off scraper proof against the public `rawdogmoon` page:
+
+```powershell
+.\.venv\Scripts\python scripts\probe_public_scraper.py rawdogmoon
+```
 
 ## Database
 
@@ -172,6 +189,9 @@ Do not put real credentials in Git. `.env` is ignored.
 - Alembic migration files are included for production-style schema management.
 - The mock provider lets the bot and tests run without external API access.
 - The real provider uses official X API endpoints and avoids scraping or browser cookies.
+- The scraper provider is isolated under `bot/providers/scraper` plus
+  `bot/providers/public_scraper.py`. It is experimental, local-first, and keeps unavailable
+  metrics as `None` instead of inventing zeroes.
 
 ## Recommended Next Feature
 

@@ -3,10 +3,16 @@ from __future__ import annotations
 from bot.config.settings import Settings
 from bot.providers.base import XAnalyticsProvider
 from bot.providers.mock import MockXAnalyticsProvider
+from bot.providers.public_scraper import PublicScraperProvider
 from bot.providers.x_api import XApiProvider
 
 
 def create_provider(settings: Settings) -> XAnalyticsProvider:
+    if settings.x_provider_mode == "scraper":
+        return PublicScraperProvider(
+            timeout_seconds=settings.x_request_timeout_seconds,
+            recent_post_limit=min(settings.x_recent_posts_limit, 10),
+        )
     if settings.x_provider_mode == "x_api":
         if settings.x_bearer_token is None:
             raise RuntimeError("X_BEARER_TOKEN is required when X_PROVIDER_MODE=x_api.")
