@@ -2,6 +2,31 @@ import type { XAccount, XPostWithMedia } from "./types";
 import { normalizeUsername } from "./x-api";
 
 type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+type ScraperLogger = (payload: PublicXFetchDiagnostics & { event: string }) => void;
+
+export type PublicXPageKind =
+  | "normal_x_html"
+  | "login_wall"
+  | "rate_limit"
+  | "block_challenge"
+  | "account_not_found"
+  | "generic_error_page"
+  | "unknown";
+
+export interface PublicXFetchDiagnostics {
+  requestedHost: string;
+  requestedPath: string;
+  fetchThrew: boolean;
+  errorName?: string;
+  errorMessage?: string;
+  httpStatus?: number;
+  statusText?: string;
+  finalUrl?: string;
+  contentType?: string;
+  bodyLength?: number;
+  pageKind?: PublicXPageKind;
+  excerpt?: string;
+}
 
 interface ScrapeResult {
   account: XAccount;
@@ -29,14 +54,20 @@ export class RateLimited extends ScraperError {}
 
 export class PublicScraperProvider {
   private readonly fetcher: Fetcher;
+  private readonly logger: ScraperLogger;
   private readonly recentPostLimit: number;
   private readonly usernamesById = new Map<string, string>();
   private readonly scrapesByUsername = new Map<string, ScrapeResult>();
   private readonly scrapeLimitsByUsername = new Map<string, number>();
   lastScrapeStats: ScrapeResult["stats"] | undefined;
 
-  constructor(options: { fetcher?: Fetcher; recentPostLimit?: number } = {}) {
+  constructor(options: {
+    fetcher?: Fetcher;
+    logger?: ScraperLogger;
+    recentPostLimit?: number;
+  } = {}) {
     this.fetcher = options.fetcher ?? fetch;
+    this.logger = options.logger ?? ((payload) => console.log(JSON.stringify(payload)));
     this.recentPostLimit = options.recentPostLimit ?? 10;
   }
 
@@ -73,37 +104,40 @@ export class PublicScraperProvider {
 
   private async scrapeUsername(username: string, maxPosts: number): Promise<ScrapeResult> {
     const normalized = normalizeUsername(username);
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15_000);
-    let response: Response;
-    try {
-      response = await this.fetcher(`https://x.com/${normalized}`, {
-        headers: {
-          accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          "user-agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-            "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
-        },
-        signal: controller.signal
-      });
-    } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") {
+    const result = await fetchPublicXProfile(normalized, this.fetcher);
+    if (result.diagnostics.fetchThrew) {
+      this.logFailure("public_scraper_fetch_failure", result.diagnostics);
+      if (result.diagnostics.errorName === "AbortError") {
         throw new NavigationTimeout("Public X page request timed out.");
       }
       throw new ScraperError("Public X page request failed.");
-    } finally {
-      clearTimeout(timeout);
     }
-    if (response.status === 429) {
+    if (result.diagnostics.httpStatus === 429) {
+      this.logFailure("public_scraper_fetch_response_failure", result.diagnostics);
       throw new RateLimited("Public X page access was rate limited.");
     }
-    if (response.status >= 400) {
-      throw new ScraperError(`Public X page returned HTTP ${response.status}.`);
+    if ((result.diagnostics.httpStatus ?? 0) >= 400) {
+      this.logFailure("public_scraper_fetch_response_failure", result.diagnostics);
+      throw new ScraperError(`Public X page returned HTTP ${result.diagnostics.httpStatus}.`);
     }
-    const scrape = parsePublicProfilePage(await response.text(), normalized, maxPosts);
+    if (result.body === undefined) {
+      this.logFailure("public_scraper_fetch_response_failure", result.diagnostics);
+      throw new ScraperError("Public X page response body was unavailable.");
+    }
+    let scrape: ScrapeResult;
+    try {
+      scrape = parsePublicProfilePage(result.body, normalized, maxPosts);
+    } catch (error) {
+      this.logFailure("public_scraper_parse_failure", result.diagnostics);
+      throw error;
+    }
     this.cacheScrape(normalized, scrape, maxPosts);
     this.lastScrapeStats = scrape.stats;
     return scrape;
+  }
+
+  private logFailure(event: string, diagnostics: PublicXFetchDiagnostics): void {
+    this.logger({ event, ...diagnostics });
   }
 
   private cacheScrape(username: string, scrape: ScrapeResult, maxPosts: number): void {
@@ -113,6 +147,99 @@ export class PublicScraperProvider {
     }
     this.usernamesById.set(scrape.account.id, scrape.account.username);
   }
+}
+
+async function fetchPublicXProfile(
+  username: string,
+  fetcher: Fetcher = fetch
+): Promise<{ diagnostics: PublicXFetchDiagnostics; body?: string }> {
+  const normalized = normalizeUsername(username);
+  const target = new URL(`https://x.com/${normalized}`);
+  const baseDiagnostics = {
+    requestedHost: target.hostname,
+    requestedPath: target.pathname
+  };
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15_000);
+  let response: Response;
+  try {
+    response = await fetcher(target.toString(), {
+      headers: {
+        accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "user-agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+          "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
+      },
+      signal: controller.signal
+    });
+  } catch (error) {
+    return {
+      diagnostics: {
+        ...baseDiagnostics,
+        fetchThrew: true,
+        ...(error instanceof Error
+          ? { errorName: error.name, errorMessage: sanitizeErrorMessage(error.message) }
+          : { errorName: "UnknownError" })
+      }
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  const body = await response.text();
+  const pageKind = classifyPublicXPage(body, response.status);
+  const contentType = response.headers.get("content-type") ?? undefined;
+  return {
+    body,
+    diagnostics: {
+      ...baseDiagnostics,
+      fetchThrew: false,
+      httpStatus: response.status,
+      statusText: response.statusText,
+      finalUrl: response.url || target.toString(),
+      ...(contentType !== undefined ? { contentType } : {}),
+      bodyLength: body.length,
+      pageKind,
+      ...(pageKind === "normal_x_html" ? {} : { excerpt: sanitizedExcerpt(body) })
+    }
+  };
+}
+
+export async function fetchPublicXDiagnostics(
+  username: string,
+  fetcher: Fetcher = fetch
+): Promise<PublicXFetchDiagnostics> {
+  return (await fetchPublicXProfile(username, fetcher)).diagnostics;
+}
+
+export function classifyPublicXPage(body: string, status: number): PublicXPageKind {
+  const lowered = body.toLowerCase();
+  if (status === 429 || lowered.includes("rate limit") || lowered.includes("too many requests")) {
+    return "rate_limit";
+  }
+  if (lowered.includes("this account doesn't exist") || lowered.includes("this account does not exist")) {
+    return "account_not_found";
+  }
+  if (lowered.includes("log in to x") || lowered.includes("sign in to x")) {
+    return "login_wall";
+  }
+  if (
+    lowered.includes("just a moment") ||
+    lowered.includes("captcha") ||
+    lowered.includes("challenge") ||
+    lowered.includes("cf-chl") ||
+    lowered.includes("access denied") ||
+    lowered.includes("blocked")
+  ) {
+    return "block_challenge";
+  }
+  if (body.includes('__typename:"User"') || body.includes('__typename:"Tweet"')) {
+    return "normal_x_html";
+  }
+  if (status >= 400 || lowered.includes("error") || lowered.includes("unavailable")) {
+    return "generic_error_page";
+  }
+  return "unknown";
 }
 
 export function parsePublicProfilePage(
@@ -438,6 +565,24 @@ function decodeHtml(value: string): string {
     .replace(/&#39;/g, "'")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">");
+}
+
+function sanitizedExcerpt(body: string): string {
+  return decodeHtml(
+    body
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\b(auth_token|ct0|bearer|authorization|cookie|token)\b[^\s]*/gi, "[redacted]")
+      .replace(/\s+/g, " ")
+      .trim()
+  ).slice(0, 300);
+}
+
+function sanitizeErrorMessage(message: string): string {
+  return message
+    .replace(/\b(auth_token|ct0|bearer|authorization|cookie|token)\b[^\s]*/gi, "[redacted]")
+    .slice(0, 300);
 }
 
 function escapeRegExp(value: string): string {

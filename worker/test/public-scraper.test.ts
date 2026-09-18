@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { createXProvider } from "../src/provider";
-import { parsePublicProfilePage, PublicScraperProvider } from "../src/public-scraper";
+import {
+  classifyPublicXPage,
+  fetchPublicXDiagnostics,
+  parsePublicProfilePage,
+  PublicScraperProvider
+} from "../src/public-scraper";
 import type { Env } from "../src/types";
 
 const USER_REF = "VXNlcjoxMjM=";
@@ -104,5 +109,51 @@ describe("public scraper provider", () => {
 
     expect(posts).toHaveLength(1);
     expect(requests).toEqual(["https://x.com/rawdogmoon"]);
+  });
+
+  it("logs safe diagnostics when the public fetch throws", async () => {
+    const logs: unknown[] = [];
+    const provider = new PublicScraperProvider({
+      fetcher: async () => {
+        throw new TypeError("fetch failed");
+      },
+      logger: (payload) => logs.push(payload)
+    });
+
+    await expect(provider.getAccountByUsername("rawdogmoon"))
+      .rejects.toThrow("Public X page request failed");
+
+    expect(logs).toEqual([
+      expect.objectContaining({
+        event: "public_scraper_fetch_failure",
+        requestedHost: "x.com",
+        requestedPath: "/rawdogmoon",
+        fetchThrew: true,
+        errorName: "TypeError"
+      })
+    ]);
+    expect(JSON.stringify(logs)).not.toContain("authorization");
+    expect(JSON.stringify(logs)).not.toContain("cookie");
+  });
+
+  it("classifies and reports safe response diagnostics", async () => {
+    const diagnostics = await fetchPublicXDiagnostics("rawdogmoon", async () =>
+      new Response("<html><title>Just a moment...</title><body>challenge</body></html>", {
+        status: 403,
+        statusText: "Forbidden",
+        headers: { "content-type": "text/html; charset=utf-8" }
+      })
+    );
+
+    expect(diagnostics.fetchThrew).toBe(false);
+    expect(diagnostics.httpStatus).toBe(403);
+    expect(diagnostics.contentType).toBe("text/html; charset=utf-8");
+    expect(diagnostics.pageKind).toBe("block_challenge");
+    expect(diagnostics.bodyLength).toBeGreaterThan(0);
+    expect(diagnostics.excerpt).toContain("Just a moment");
+  });
+
+  it("classifies normal profile html", () => {
+    expect(classifyPublicXPage(profileRecord() + postRecord(), 200)).toBe("normal_x_html");
   });
 });

@@ -36,12 +36,7 @@ export async function handleImmediateCommand(interaction: DiscordInteraction, en
     return `Tracked accounts:\n${usernames.join("\n")}`;
   }
   if (name === "twitter") {
-    const username = optionValue(interaction, "username");
-    if (!username) {
-      return "Please provide a username.";
-    }
-    const account = await createXProvider(env).getAccountByUsername(username);
-    return `@${account.username}\nFollowers: ${compactNumber(account.public_metrics?.followers_count)}\nPosts: ${compactNumber(account.public_metrics?.post_count ?? account.public_metrics?.tweet_count)}`;
+    return twitterCommand(interaction, env);
   }
   if (name === "analytics") {
     const username = normalizeUsername(optionValue(interaction, "username") ?? "");
@@ -71,6 +66,15 @@ export async function handleImmediateCommand(interaction: DiscordInteraction, en
     return `Stopped tracking @${username}. Historical data was kept.`;
   }
   return "Unknown command.";
+}
+
+export async function twitterCommand(interaction: DiscordInteraction, env: Env): Promise<string> {
+  const username = optionValue(interaction, "username");
+  if (!username) {
+    return "Please provide a username.";
+  }
+  const account = await createXProvider(env).getAccountByUsername(username);
+  return `@${account.username}\nFollowers: ${compactNumber(account.public_metrics?.followers_count)}\nPosts: ${compactNumber(account.public_metrics?.post_count ?? account.public_metrics?.tweet_count)}`;
 }
 
 export async function trackCommand(interaction: DiscordInteraction, env: Env): Promise<string> {

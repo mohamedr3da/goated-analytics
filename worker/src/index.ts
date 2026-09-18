@@ -1,9 +1,17 @@
 import { deferred, InteractionResponseType, InteractionType, jsonResponse, message, sendFollowup, verifyDiscordRequest } from "./discord";
-import { handleImmediateCommand, refreshCommand, runCollection, trackCommand } from "./commands";
+import { handleImmediateCommand, refreshCommand, runCollection, trackCommand, twitterCommand } from "./commands";
+import { fetchPublicXDiagnostics } from "./public-scraper";
 import type { DiscordInteraction, Env } from "./types";
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const url = new URL(request.url);
+    if (request.method === "GET" && url.pathname === "/__scraper-smoke/rawdogmoon") {
+      if (env.SCRAPER_SMOKE_ENABLED !== "true") {
+        return new Response("Not found", { status: 404 });
+      }
+      return jsonResponse(await fetchPublicXDiagnostics("rawdogmoon"));
+    }
     if (request.method !== "POST") {
       return new Response("Not found", { status: 404 });
     }
@@ -17,7 +25,7 @@ export default {
     if (interaction.type !== InteractionType.ApplicationCommand) {
       return message("Unsupported interaction type.", true);
     }
-    if (interaction.data?.name === "track" || interaction.data?.name === "refresh" || interaction.data?.name === "collectnow") {
+    if (shouldDeferCommand(interaction.data?.name)) {
       ctx.waitUntil(
         deferredCommand(interaction, env)
           .then((content) => sendFollowup(env, interaction, content))
@@ -34,7 +42,14 @@ export default {
   }
 };
 
+export function shouldDeferCommand(name: string | undefined): boolean {
+  return name === "twitter" || name === "track" || name === "refresh" || name === "collectnow";
+}
+
 async function deferredCommand(interaction: DiscordInteraction, env: Env): Promise<string> {
+  if (interaction.data?.name === "twitter") {
+    return twitterCommand(interaction, env);
+  }
   if (interaction.data?.name === "track") {
     return trackCommand(interaction, env);
   }

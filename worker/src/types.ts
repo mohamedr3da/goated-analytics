@@ -2,6 +2,7 @@ export interface Env {
   DB: D1Database;
   ENVIRONMENT: string;
   X_PROVIDER_MODE?: string;
+  SCRAPER_SMOKE_ENABLED?: string;
   X_BEARER_TOKEN?: string;
   DISCORD_APPLICATION_PUBLIC_KEY: string;
   DISCORD_APPLICATION_ID: string;
