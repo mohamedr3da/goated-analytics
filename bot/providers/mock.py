@@ -3,12 +3,14 @@ from __future__ import annotations
 import hashlib
 from datetime import UTC, datetime, timedelta
 
-from bot.providers.types import XAccount, XPost, XPostMetrics
+from bot.providers.types import XAccount, XPost, XPostMetrics, XRateLimitState
 from bot.utils.usernames import normalize_x_username
 
 
 class MockXAnalyticsProvider:
     """Deterministic development provider used when real X credentials are not configured."""
+
+    last_rate_limit: XRateLimitState | None = None
 
     async def get_account_by_username(self, username: str) -> XAccount:
         normalized = normalize_x_username(username)
@@ -68,9 +70,23 @@ class MockXAnalyticsProvider:
             )
         return posts
 
+    async def get_posts_window(
+        self,
+        x_user_id: str,
+        *,
+        start_time: datetime,
+        end_time: datetime,
+        max_posts: int,
+    ) -> list[XPost]:
+        posts = await self.get_recent_posts(x_user_id, max_results=max_posts)
+        return [
+            post
+            for post in posts
+            if start_time <= post.created_at <= end_time
+        ][:max_posts]
+
     async def health_check(self) -> bool:
         return True
 
     async def aclose(self) -> None:
         return None
-

@@ -19,6 +19,9 @@ class TrackedAccount(Base):
     x_user_id: Mapped[str] = mapped_column(String(32), unique=True, nullable=False, index=True)
     username: Mapped[str] = mapped_column(String(15), nullable=False, index=True)
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    profile_image_url: Mapped[str | None] = mapped_column(String(500))
+    account_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    verified_type: Mapped[str | None] = mapped_column(String(50))
     tracking_started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=utcnow,
@@ -27,6 +30,8 @@ class TrackedAccount(Base):
     is_tracking_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     protected: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    last_successful_refresh_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_refresh_error: Mapped[str | None] = mapped_column(String(1000))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -76,6 +81,11 @@ class Post(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     text_preview: Mapped[str] = mapped_column(String(500), nullable=False)
     url: Mapped[str] = mapped_column(String(255), nullable=False)
+    post_type: Mapped[str] = mapped_column(String(32), default="post", nullable=False)
+    referenced_post_id: Mapped[str | None] = mapped_column(String(32))
+    conversation_id: Mapped[str | None] = mapped_column(String(32))
+    lang: Mapped[str | None] = mapped_column(String(16))
+    possibly_sensitive: Mapped[bool | None] = mapped_column(Boolean)
     first_seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=utcnow,
@@ -116,3 +126,17 @@ class PostMetricSnapshot(Base):
 
     post: Mapped[Post] = relationship(back_populates="metric_snapshots")
 
+
+class CollectionRun(Base):
+    __tablename__ = "collection_runs"
+    __table_args__ = (
+        Index("ix_collection_runs_started", "started_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    successes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    failures: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    error: Mapped[str | None] = mapped_column(String(1000))

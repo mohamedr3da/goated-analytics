@@ -1,0 +1,21 @@
+{
+  "name": "goated-analytics-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check": "wrangler check",
+    "dry-run": "wrangler deploy --dry-run"
+  },
+  "dependencies": {
+    "tweetnacl": "^1.0.3"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "latest",
+    "typescript": "^5.9.2",
+    "vitest": "^4.0.15",
+    "wrangler": "^4.134.0"
+  }
+}

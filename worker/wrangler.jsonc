@@ -1,0 +1,29 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "goated-analytics",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-18",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "vars": {
+    "ENVIRONMENT": "production",
+    "X_INITIAL_BACKFILL_DAYS": "30",
+    "X_INITIAL_BACKFILL_MAX_POSTS": "200",
+    "X_RECENT_POSTS_LIMIT": "20",
+    "PUBLIC_ANALYTICS_ENABLED": "true"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "goated-analytics-db",
+      "database_id": "cc980a0a-f7f0-4bf5-a2e1-ac75818a1b6f",
+      "migrations_dir": "./migrations"
+    }
+  ],
+  "triggers": {
+    "crons": ["0 * * * *"]
+  }
+}

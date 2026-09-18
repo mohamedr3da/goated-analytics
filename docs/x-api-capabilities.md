@@ -71,3 +71,24 @@ The regular public lookup endpoints return current cumulative metrics, not arbit
 
 The bot therefore reports insufficient history when the required baseline snapshot is missing.
 
+## Capability Matrix
+
+| Metric | Public account | Connected/owned account | Historical via snapshots |
+| --- | --- | --- | --- |
+| Followers | Yes, user public metrics | Yes | Yes, after tracking begins |
+| Following | Yes, user public metrics | Yes | Yes, after tracking begins |
+| Post count | Yes, user public metrics | Yes | Yes, after tracking begins |
+| Post impressions | Yes, if `public_metrics.impression_count` is returned | Yes | Yes, after tracking begins |
+| Likes/replies/reposts/quotes | Yes, post public metrics | Yes | Yes, after tracking begins |
+| Bookmarks | Yes, if returned in post public metrics | Yes | Yes, after tracking begins |
+| Video/media views | Yes as media `view_count`; separate from post impressions | Yes | Yes, after tracking begins |
+| URL clicks/profile clicks | No for arbitrary public accounts | Potentially with user-context analytics | Yes only after an owned-account provider collects them |
+| Organic/promoted metrics | No for arbitrary public accounts | Yes where current auth/API access supports them | Yes only after collection begins |
+
+## Current Implementation Notes
+
+- Public account lookup uses `GET /2/users/by/username/:username`.
+- Public timelines use `GET /2/users/:id/tweets` with pagination.
+- The provider requests only fields needed for analytics and metadata.
+- Simple reposts are excluded from timeline collection by default.
+- Quote posts and replies authored by the tracked account are stored with post type metadata.

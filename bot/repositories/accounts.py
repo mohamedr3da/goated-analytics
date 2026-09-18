@@ -29,6 +29,9 @@ class AccountRepository:
                 x_user_id=account.id,
                 username=account.username,
                 display_name=account.display_name,
+                profile_image_url=account.profile_image_url,
+                account_created_at=account.created_at,
+                verified_type=account.verified_type,
                 protected=account.protected,
                 verified=account.verified,
                 is_tracking_enabled=True,
@@ -37,6 +40,9 @@ class AccountRepository:
         else:
             existing.username = account.username
             existing.display_name = account.display_name
+            existing.profile_image_url = account.profile_image_url
+            existing.account_created_at = account.created_at
+            existing.verified_type = account.verified_type
             existing.protected = account.protected
             existing.verified = account.verified
             existing.is_tracking_enabled = True
@@ -98,3 +104,14 @@ class AccountRepository:
         self.session.add(snapshot)
         await self.session.flush()
         return snapshot
+
+    async def mark_refresh_success(self, account: TrackedAccount, captured_at: datetime) -> None:
+        account.last_successful_refresh_at = captured_at
+        account.last_refresh_error = None
+        account.updated_at = utcnow()
+        await self.session.flush()
+
+    async def mark_refresh_failure(self, account: TrackedAccount, error: str) -> None:
+        account.last_refresh_error = error[:1000]
+        account.updated_at = utcnow()
+        await self.session.flush()

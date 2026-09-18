@@ -26,6 +26,7 @@ async def async_main() -> None:
         provider=provider,
         interval_minutes=settings.collection_interval_minutes,
         recent_posts_limit=settings.x_recent_posts_limit,
+        snapshot_min_interval_minutes=settings.snapshot_min_interval_minutes,
     )
     bot = build_bot(
         settings=settings,
@@ -49,4 +50,3 @@ def run() -> None:
 
 if __name__ == "__main__":
     run()
-

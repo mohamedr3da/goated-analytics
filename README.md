@@ -30,6 +30,10 @@ The Discord layer depends on services, services depend on repositories and the p
 - Mock provider for local development without X API credentials.
 - Async SQLAlchemy models with SQLite locally and PostgreSQL-friendly schema choices.
 - Alembic initial migration scaffold.
+- TypeScript Cloudflare Worker production target in `worker/` using Discord HTTP Interactions,
+  D1, and Cron Triggers.
+- Real X API provider with pagination, rate-limit metadata, retries for transient failures,
+  media/video metrics kept separate from post impressions, and robust error mapping.
 
 ## X API Limitations
 
@@ -71,6 +75,17 @@ For real X API access:
 ```dotenv
 X_PROVIDER_MODE=x_api
 X_BEARER_TOKEN=your_x_api_bearer_token
+```
+
+Additional local settings:
+
+```dotenv
+X_INITIAL_BACKFILL_DAYS=30
+X_INITIAL_BACKFILL_MAX_POSTS=200
+X_REQUEST_TIMEOUT_SECONDS=20
+X_MAX_RETRIES=3
+X_MAX_CONCURRENCY=2
+SNAPSHOT_MIN_INTERVAL_MINUTES=60
 ```
 
 ## Discord Configuration
@@ -125,11 +140,29 @@ For posts created inside the period, the baseline is zero. For posts created bef
 
 This is different from "total current views on posts created during the period." The code is intentionally built around true metric growth over time.
 
+The `/analytics` command also reports current cumulative performance for posts created in
+the selected period. That is useful immediately after tracking starts, but it is labelled
+separately from metric growth during the period.
+
+## Cloudflare Production
+
+Production lives under `worker/` and is intentionally separate from the local `discord.py`
+gateway bot. The Worker uses Discord HTTP Interactions, validates Ed25519 signatures,
+responds to Discord PING verification, stores data in D1, and runs scheduled collection
+through Cloudflare Cron Triggers.
+
+See [docs/cloudflare-deployment.md](docs/cloudflare-deployment.md).
+
 ## Credentials Needed
 
 - `DISCORD_TOKEN`: Discord bot token.
 - `X_BEARER_TOKEN`: X API bearer token, required only when `X_PROVIDER_MODE=x_api`.
 - Optional Discord allowlist IDs for account-management commands.
+- Cloudflare production secrets:
+  - `X_BEARER_TOKEN`
+  - `DISCORD_APPLICATION_PUBLIC_KEY`
+  - `DISCORD_APPLICATION_ID`
+  - `DISCORD_BOT_TOKEN` for deferred followups and command registration.
 
 Do not put real credentials in Git. `.env` is ignored.
 
@@ -142,5 +175,6 @@ Do not put real credentials in Git. `.env` is ignored.
 
 ## Recommended Next Feature
 
-Add a richer `/analytics` embed with top-performing posts once enough snapshots exist, then add scheduled daily or weekly Discord reports on top of the same analytics service.
-
+After the Cloudflare Worker is deployed and the Discord Interactions Endpoint is set,
+register production slash commands through Discord's API and add richer D1 analytics
+queries for top posts by engagement.

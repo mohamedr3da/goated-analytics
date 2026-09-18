@@ -24,6 +24,11 @@ class PostRepository:
                 created_at=post.created_at,
                 text_preview=preview,
                 url=post.url,
+                post_type=post.post_type,
+                referenced_post_id=post.referenced_post_id,
+                conversation_id=post.conversation_id,
+                lang=post.lang,
+                possibly_sensitive=post.possibly_sensitive,
                 raw_data=post.raw,
             )
             self.session.add(existing)
@@ -32,6 +37,11 @@ class PostRepository:
             existing.created_at = post.created_at
             existing.text_preview = preview
             existing.url = post.url
+            existing.post_type = post.post_type
+            existing.referenced_post_id = post.referenced_post_id
+            existing.conversation_id = post.conversation_id
+            existing.lang = post.lang
+            existing.possibly_sensitive = post.possibly_sensitive
             existing.last_seen_at = utcnow()
             existing.raw_data = post.raw
         await self.session.flush()
@@ -51,6 +61,8 @@ class PostRepository:
         post: Post,
         metrics: XPostMetrics,
         captured_at: datetime,
+        *,
+        min_interval_minutes: int | None = None,
     ) -> PostMetricSnapshot:
         existing = await self.session.scalar(
             select(PostMetricSnapshot).where(
@@ -60,6 +72,16 @@ class PostRepository:
         )
         if existing is not None:
             return existing
+        latest = await self._latest_metric_snapshot(post)
+        if (
+            latest is not None
+            and min_interval_minutes is not None
+            and min_interval_minutes > 0
+            and _metrics_equal(latest, metrics)
+        ):
+            elapsed_seconds = (captured_at - latest.captured_at).total_seconds()
+            if elapsed_seconds < min_interval_minutes * 60:
+                return latest
         snapshot = PostMetricSnapshot(
             post_id=post.id,
             captured_at=captured_at,
@@ -76,9 +98,30 @@ class PostRepository:
         await self.session.flush()
         return snapshot
 
+    async def _latest_metric_snapshot(self, post: Post) -> PostMetricSnapshot | None:
+        statement = (
+            select(PostMetricSnapshot)
+            .where(PostMetricSnapshot.post_id == post.id)
+            .order_by(PostMetricSnapshot.captured_at.desc(), PostMetricSnapshot.id.desc())
+            .limit(1)
+        )
+        return await self.session.scalar(statement)
+
 
 def _preview_text(text: str, *, max_length: int = 500) -> str:
     normalized = " ".join(text.split())
     if len(normalized) <= max_length:
         return normalized
     return normalized[: max_length - 3] + "..."
+
+
+def _metrics_equal(snapshot: PostMetricSnapshot, metrics: XPostMetrics) -> bool:
+    return (
+        snapshot.impression_count == metrics.impression_count
+        and snapshot.like_count == metrics.like_count
+        and snapshot.reply_count == metrics.reply_count
+        and snapshot.repost_count == metrics.repost_count
+        and snapshot.quote_count == metrics.quote_count
+        and snapshot.bookmark_count == metrics.bookmark_count
+        and snapshot.video_view_count == metrics.video_view_count
+    )

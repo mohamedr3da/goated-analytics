@@ -164,3 +164,55 @@ async def test_missing_metric_values_do_not_crash_or_invent_values(
     assert result.views_gained is None
     assert "missing" in result.reason.lower()
 
+
+async def test_analytics_reports_current_performance_for_posts_published_in_period(
+    session: AsyncSession,
+) -> None:
+    start = datetime(2026, 9, 17, 9, 0, tzinfo=UTC)
+    end = datetime(2026, 9, 18, 9, 0, tzinfo=UTC)
+    account = await tracked_account_with_snapshots(session, start, end)
+    post_repo = PostRepository(session)
+    first = await post_repo.upsert_post(
+        account,
+        post_payload("5", start + timedelta(hours=1), 500),
+    )
+    second = await post_repo.upsert_post(
+        account,
+        post_payload("6", start + timedelta(hours=2), 250),
+    )
+    await post_repo.record_metric_snapshot(
+        first, post_payload("5", start + timedelta(hours=1), 500).metrics, end
+    )
+    await post_repo.record_metric_snapshot(
+        second, post_payload("6", start + timedelta(hours=2), 250).metrics, end
+    )
+    await session.commit()
+
+    result = await AnalyticsService(session).summarize_account(
+        account,
+        AnalyticsPeriod(start=start, end=end),
+    )
+
+    assert result.current_period_post_impressions == 750
+    assert result.average_impressions_per_period_post == 375
+    assert [post.x_post_id for post in result.top_posts_by_impressions] == ["5", "6"]
+
+
+async def test_analytics_reports_partial_coverage_without_faking_full_period(
+    session: AsyncSession,
+) -> None:
+    start = datetime(2026, 9, 11, 9, 0, tzinfo=UTC)
+    first_snapshot = datetime(2026, 9, 15, 9, 0, tzinfo=UTC)
+    end = datetime(2026, 9, 18, 9, 0, tzinfo=UTC)
+    account = await tracked_account_with_snapshots(session, first_snapshot, end)
+    await session.commit()
+
+    result = await AnalyticsService(session).summarize_account(
+        account,
+        AnalyticsPeriod(start=start, end=end),
+    )
+
+    assert not result.available
+    assert result.coverage_seconds == int((end - first_snapshot).total_seconds())
+    assert result.requested_seconds == int((end - start).total_seconds())
+    assert "Only" in result.reason

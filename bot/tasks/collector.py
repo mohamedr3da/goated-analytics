@@ -29,10 +29,12 @@ class CollectionService:
         session: AsyncSession,
         provider: XAnalyticsProvider,
         recent_posts_limit: int,
+        snapshot_min_interval_minutes: int | None = None,
     ) -> None:
         self.session = session
         self.provider = provider
         self.recent_posts_limit = recent_posts_limit
+        self.snapshot_min_interval_minutes = snapshot_min_interval_minutes
         self.accounts = AccountRepository(session)
         self.posts = PostRepository(session)
 
@@ -81,4 +83,10 @@ class CollectionService:
         )
         for post_payload in recent_posts:
             post = await self.posts.upsert_post(tracked_account, post_payload)
-            await self.posts.record_metric_snapshot(post, post_payload.metrics, captured_at)
+            await self.posts.record_metric_snapshot(
+                post,
+                post_payload.metrics,
+                captured_at,
+                min_interval_minutes=self.snapshot_min_interval_minutes,
+            )
+        await self.accounts.mark_refresh_success(tracked_account, captured_at)

@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +20,9 @@ def make_account(username: str = "first") -> XAccount:
         following_count=10,
         post_count=50,
         listed_count=2,
+        profile_image_url="https://example.com/profile.jpg",
+        created_at=datetime(2020, 1, 1, tzinfo=UTC),
+        verified_type="blue",
         raw={"id": "12345"},
     )
 
@@ -41,6 +44,11 @@ def make_post(impressions: int | None = 100) -> XPost:
             video_view_count=None,
             raw={"impression_count": impressions},
         ),
+        post_type="quote",
+        referenced_post_id="888",
+        conversation_id="777",
+        lang="en",
+        possibly_sensitive=False,
         raw={"id": "999"},
     )
 
@@ -57,6 +65,9 @@ async def test_tracked_account_keeps_identity_when_username_changes(
     assert renamed.id == original.id
     assert renamed.x_user_id == "12345"
     assert renamed.username == "second"
+    assert renamed.profile_image_url == "https://example.com/profile.jpg"
+    assert renamed.account_created_at == datetime(2020, 1, 1, tzinfo=UTC)
+    assert renamed.verified_type == "blue"
     active_accounts = await repo.list_active()
     assert [account.username for account in active_accounts] == ["second"]
 
@@ -102,3 +113,56 @@ async def test_posts_and_metric_snapshots_are_idempotent(
     assert post_count == 1
     assert snapshot_count == 1
 
+
+async def test_post_metadata_is_persisted_without_duplicate_static_rows(
+    session: AsyncSession,
+) -> None:
+    account_repo = AccountRepository(session)
+    post_repo = PostRepository(session)
+    account = await account_repo.upsert_tracked_account(make_account())
+
+    post = await post_repo.upsert_post(account, make_post(100))
+    await session.commit()
+    persisted = await session.scalar(select(Post).where(Post.id == post.id))
+
+    assert persisted is not None
+    assert persisted.post_type == "quote"
+    assert persisted.referenced_post_id == "888"
+    assert persisted.conversation_id == "777"
+    assert persisted.lang == "en"
+    assert persisted.possibly_sensitive is False
+
+
+async def test_unchanged_metric_snapshots_can_be_skipped_until_min_interval(
+    session: AsyncSession,
+) -> None:
+    account_repo = AccountRepository(session)
+    post_repo = PostRepository(session)
+    account = await account_repo.upsert_tracked_account(make_account())
+    post = await post_repo.upsert_post(account, make_post(100))
+    first_at = datetime(2026, 9, 18, 8, 0, tzinfo=UTC)
+
+    first = await post_repo.record_metric_snapshot(
+        post,
+        make_post(100).metrics,
+        first_at,
+        min_interval_minutes=60,
+    )
+    second = await post_repo.record_metric_snapshot(
+        post,
+        make_post(100).metrics,
+        first_at + timedelta(minutes=30),
+        min_interval_minutes=60,
+    )
+    third = await post_repo.record_metric_snapshot(
+        post,
+        make_post(100).metrics,
+        first_at + timedelta(minutes=61),
+        min_interval_minutes=60,
+    )
+    await session.commit()
+
+    count = await session.scalar(select(func.count(PostMetricSnapshot.id)))
+    assert first.id == second.id
+    assert third.id != first.id
+    assert count == 2
