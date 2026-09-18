@@ -1,7 +1,8 @@
 export interface Env {
   DB: D1Database;
   ENVIRONMENT: string;
-  X_BEARER_TOKEN: string;
+  X_PROVIDER_MODE?: string;
+  X_BEARER_TOKEN?: string;
   DISCORD_APPLICATION_PUBLIC_KEY: string;
   DISCORD_APPLICATION_ID: string;
   DISCORD_BOT_TOKEN?: string;
@@ -55,6 +56,7 @@ export interface XPost {
   possibly_sensitive?: boolean;
   referenced_tweets?: Array<{ type: string; id: string }>;
   attachments?: { media_keys?: string[] };
+  url?: string;
   public_metrics?: {
     impression_count?: number;
     like_count?: number;
@@ -69,4 +71,3 @@ export interface XPost {
 export interface XPostWithMedia extends XPost {
   video_view_count?: number;
 }
-

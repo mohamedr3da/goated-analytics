@@ -2,8 +2,9 @@ import { compactNumber } from "./formatting";
 import { periodStart } from "./analytics";
 import { recordAccountSnapshot, recordPostMetrics, upsertPost, upsertTrackedAccount } from "./db";
 import { optionValue } from "./discord";
+import { createXProvider, providerAuthLabel, providerModeLabel } from "./provider";
 import type { DiscordInteraction, Env } from "./types";
-import { XApiClient, normalizeUsername } from "./x-api";
+import { normalizeUsername } from "./x-api";
 
 export async function handleImmediateCommand(interaction: DiscordInteraction, env: Env): Promise<string> {
   const name = interaction.data?.name;
@@ -11,7 +12,14 @@ export async function handleImmediateCommand(interaction: DiscordInteraction, en
     const tracked = await env.DB.prepare(
       "SELECT COUNT(*) AS count FROM tracked_accounts WHERE is_tracking_enabled = 1"
     ).first<{ count: number }>();
-    return `Discord Interactions: Healthy\nDatabase: D1\nTracked Accounts: ${tracked?.count ?? 0}\nEnvironment: ${env.ENVIRONMENT}`;
+    return [
+      "Discord Interactions: Healthy",
+      "Database: D1",
+      `X Data Provider: ${providerModeLabel(env)}`,
+      `Authentication: ${providerAuthLabel(env)}`,
+      `Tracked Accounts: ${tracked?.count ?? 0}`,
+      `Environment: ${env.ENVIRONMENT}`
+    ].join("\n");
   }
   if (name === "tracked") {
     const accounts = await env.DB.prepare(
@@ -32,7 +40,7 @@ export async function handleImmediateCommand(interaction: DiscordInteraction, en
     if (!username) {
       return "Please provide a username.";
     }
-    const account = await new XApiClient(env.X_BEARER_TOKEN).getAccountByUsername(username);
+    const account = await createXProvider(env).getAccountByUsername(username);
     return `@${account.username}\nFollowers: ${compactNumber(account.public_metrics?.followers_count)}\nPosts: ${compactNumber(account.public_metrics?.post_count ?? account.public_metrics?.tweet_count)}`;
   }
   if (name === "analytics") {
@@ -71,7 +79,7 @@ export async function trackCommand(interaction: DiscordInteraction, env: Env): P
     return "Please provide a username.";
   }
   const now = new Date();
-  const client = new XApiClient(env.X_BEARER_TOKEN);
+  const client = createXProvider(env);
   const account = await client.getAccountByUsername(username);
   const accountId = await upsertTrackedAccount(env.DB, account, now.toISOString());
   await recordAccountSnapshot(env.DB, accountId, account, now.toISOString());
@@ -85,7 +93,7 @@ export async function trackCommand(interaction: DiscordInteraction, env: Env): P
     const postId = await upsertPost(env.DB, accountId, post, now.toISOString());
     await recordPostMetrics(env.DB, postId, post, now.toISOString());
   }
-  return `Now tracking @${account.username}\nFollowers: ${compactNumber(account.public_metrics?.followers_count)}\nPosts imported: ${posts.length}`;
+  return `Now tracking @${account.username}\nProvider: ${providerModeLabel(env)}\nFollowers: ${compactNumber(account.public_metrics?.followers_count)}\nPosts imported: ${posts.length}`;
 }
 
 export async function refreshCommand(interaction: DiscordInteraction, env: Env): Promise<string> {
@@ -97,7 +105,7 @@ export async function refreshCommand(interaction: DiscordInteraction, env: Env):
     return `@${username} is not being tracked.`;
   }
   const now = new Date();
-  const client = new XApiClient(env.X_BEARER_TOKEN);
+  const client = createXProvider(env);
   const fresh = await client.getAccountByUsername(username);
   const accountId = await upsertTrackedAccount(env.DB, fresh, now.toISOString());
   await recordAccountSnapshot(env.DB, accountId, fresh, now.toISOString());
@@ -119,7 +127,7 @@ export async function runCollection(env: Env): Promise<{ successes: number; fail
   const accounts = await env.DB.prepare(
     "SELECT id, username, x_user_id FROM tracked_accounts WHERE is_tracking_enabled = 1"
   ).all<{ id: number; username: string; x_user_id: string }>();
-  const client = new XApiClient(env.X_BEARER_TOKEN);
+  const client = createXProvider(env);
   let successes = 0;
   let failures = 0;
   for (const account of accounts.results ?? []) {

@@ -100,7 +100,7 @@ export async function upsertPost(db: D1Database, accountId: number, post: XPostW
       accountId,
       post.created_at,
       safePreview(post.text ?? "", 500),
-      `https://x.com/i/status/${post.id}`,
+      post.url ?? `https://x.com/i/status/${post.id}`,
       postType,
       post.referenced_tweets?.[0]?.id ?? null,
       post.conversation_id ?? null,
@@ -140,4 +140,3 @@ export async function recordPostMetrics(db: D1Database, postId: number, post: XP
     )
     .run();
 }
-

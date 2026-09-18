@@ -10,6 +10,7 @@
   },
   "vars": {
     "ENVIRONMENT": "production",
+    "X_PROVIDER_MODE": "scraper",
     "X_INITIAL_BACKFILL_DAYS": "30",
     "X_INITIAL_BACKFILL_MAX_POSTS": "200",
     "X_RECENT_POSTS_LIMIT": "20",
