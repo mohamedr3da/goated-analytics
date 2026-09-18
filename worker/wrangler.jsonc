@@ -19,7 +19,7 @@
     {
       "binding": "DB",
       "database_name": "goated-analytics-db",
-      "database_id": "cc980a0a-f7f0-4bf5-a2e1-ac75818a1b6f",
+      "database_id": "df1e69a6-cc06-4f59-ab9f-b004b99c6c03",
       "migrations_dir": "./migrations"
     }
   ],
